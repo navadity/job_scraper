@@ -50,14 +50,12 @@ if st.button("🔍 Fetch Jobs"):
             df = pd.DataFrame(results)
             st.success(f"✅ Found {len(df)} jobs.")
 
-            # Bar Chart: Job Count by Company
             st.subheader("📊 Job Count by Company")
             chart_data = df["Company"].value_counts().reset_index()
             chart_data.columns = ["Company", "Job Count"]
             fig = px.bar(chart_data, x="Company", y="Job Count", title="Top Hiring Companies")
             st.plotly_chart(fig, use_container_width=True)
 
-            # Interactive Grid
             st.subheader("📋 Job Listings (Interactive Grid)")
             gb = GridOptionsBuilder.from_dataframe(df)
             gb.configure_pagination(paginationAutoPageSize=True)
@@ -65,34 +63,29 @@ if st.button("🔍 Fetch Jobs"):
             grid_options = gb.build()
             AgGrid(df, gridOptions=grid_options, enable_enterprise_modules=True, fit_columns_on_grid_load=True)
 
-            # Download button
             if st.button("📥 Export to Excel"):
                 df.to_excel("jobs_output.xlsx", index=False)
                 with open("jobs_output.xlsx", "rb") as f:
                     st.download_button("Download Excel", f, file_name="jobs.xlsx")
 
-            # Salary Insights
             st.markdown("---")
             st.header("💰 Company & City Payscale Insights")
             df['MinSalary'] = pd.to_numeric(df['salary_min'], errors='coerce')
             df['MaxSalary'] = pd.to_numeric(df['salary_max'], errors='coerce')
             df['AvgSalary'] = df[['MinSalary', 'MaxSalary']].mean(axis=1)
 
-            if "Company" in df.columns:
-                st.subheader("🏢 Average Salary by Company (Top 10)")
-                company_salary = df.groupby("Company")["AvgSalary"].mean().dropna().sort_values(ascending=False).head(10).reset_index()
-                fig = px.bar(company_salary, x="Company", y="AvgSalary", title="Avg Salary by Company", labels={"AvgSalary": "Avg Salary (USD)"})
-                st.plotly_chart(fig, use_container_width=True)
+            st.subheader("🏢 Average Salary by Company (Top 10)")
+            company_salary = df.groupby("Company")["AvgSalary"].mean().dropna().sort_values(ascending=False).head(10).reset_index()
+            fig = px.bar(company_salary, x="Company", y="AvgSalary", title="Avg Salary by Company", labels={"AvgSalary": "Avg Salary (USD)"})
+            st.plotly_chart(fig, use_container_width=True)
 
-            if "Location" in df.columns:
-                st.subheader("🌆 Average Salary by City (Top 10)")
-                city_salary = df.groupby("Location")["AvgSalary"].mean().dropna().sort_values(ascending=False).head(10).reset_index()
-                fig2 = px.bar(city_salary, x="Location", y="AvgSalary", title="Avg Salary by Location", labels={"AvgSalary": "Avg Salary (USD)"})
-                st.plotly_chart(fig2, use_container_width=True)
+            st.subheader("🌆 Average Salary by City (Top 10)")
+            city_salary = df.groupby("Location")["AvgSalary"].mean().dropna().sort_values(ascending=False).head(10).reset_index()
+            fig2 = px.bar(city_salary, x="Location", y="AvgSalary", title="Avg Salary by Location", labels={"AvgSalary": "Avg Salary (USD)"})
+            st.plotly_chart(fig2, use_container_width=True)
         else:
             st.warning("⚠️ No jobs found.")
 
-# Company Search Section
 st.markdown("---")
 st.header("🏢 Company-Specific Job Scraper")
 company_name = st.text_input("Enter company name (e.g., Microsoft)", value="")
@@ -106,15 +99,13 @@ if st.button("🏢 Fetch Jobs for Company"):
                 df_company = pd.DataFrame(company_results)
                 st.success(f"✅ Found {len(df_company)} jobs at {company_name}")
 
-                # Chart
-                st.subheader("📊 Locations of Jobs")
-                chart = df_company["Location"].value_counts().reset_index()
-                chart.columns = ["Location", "Job Count"]
-                fig = px.bar(chart, x="Location", y="Job Count", title=f"Job Locations at {company_name}")
+                st.subheader("📍 Jobs by Location")
+                loc_count = df_company["Location"].value_counts().reset_index()
+                loc_count.columns = ["Location", "Job Count"]
+                fig = px.bar(loc_count, x="Location", y="Job Count", title=f"Job Locations at {company_name}")
                 st.plotly_chart(fig, use_container_width=True)
 
-                # Grid display
-                st.subheader("📋 Job Listings (Interactive Grid)")
+                st.subheader("📋 Company Job Listings (Interactive Grid)")
                 gb = GridOptionsBuilder.from_dataframe(df_company)
                 gb.configure_pagination(paginationAutoPageSize=True)
                 gb.configure_default_column(groupable=True, value=True, enableRowGroup=True, editable=False)
