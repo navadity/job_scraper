@@ -9,14 +9,17 @@ APP_ID = "405c8afb"
 APP_KEY = "62a942e1b43aa0c0676795f62c5181d1"
 COUNTRY = "us"
 
-def fetch_jobs(query, pages=1):
+def fetch_jobs(query, company_filter=None, pages=1):
     all_jobs = []
     for page in range(1, pages + 1):
+        full_query = query
+        if company_filter:
+            full_query += f' company:"{company_filter}"'
         url = f"https://api.adzuna.com/v1/api/jobs/{COUNTRY}/search/{page}"
         params = {
             "app_id": APP_ID,
             "app_key": APP_KEY,
-            "what": query,
+            "what": full_query,
             "results_per_page": 50,
             "content-type": "application/json"
         }
@@ -37,24 +40,40 @@ def fetch_jobs(query, pages=1):
             st.error(f"Error {res.status_code}: {res.text}")
     return all_jobs
 
-# Streamlit UI
-st.title("🧠 Smart Job Scraper (Adzuna + Streamlit)")
+# Unified Streamlit interface
+st.title("🧠 Smart Job Scraper")
 
-job_query = st.text_input("Search Job Title:", value="Software Engineer 2")
-num_pages = st.slider("Number of pages to scrape", 1, 5, 1)
+job_query = st.text_input("Search job title or keyword", value="Software Engineer 2")
+company_filter = st.text_input("Optional: Filter by company (e.g., Microsoft)", value="")
+num_pages = st.slider("Pages to scrape", 1, 5, 1)
 
 if st.button("🔍 Fetch Jobs"):
     with st.spinner("Fetching jobs..."):
-        results = fetch_jobs(job_query, pages=num_pages)
+        results = fetch_jobs(query=job_query, company_filter=company_filter, pages=num_pages)
         if results:
             df = pd.DataFrame(results)
-            st.success(f"✅ Found {len(df)} jobs.")
+            st.success(f"✅ Found {len(df)} job listings.")
+
+            df['MinSalary'] = pd.to_numeric(df['salary_min'], errors='coerce')
+            df['MaxSalary'] = pd.to_numeric(df['salary_max'], errors='coerce')
+            df['AvgSalary'] = df[['MinSalary', 'MaxSalary']].mean(axis=1)
+
+            st.subheader("📍 Job Locations")
+            loc_count = df["Location"].value_counts().reset_index()
+            loc_count.columns = ["Location", "Job Count"]
+            fig = px.bar(loc_count, x="Location", y="Job Count", title="Job Distribution by Location")
+            st.plotly_chart(fig, use_container_width=True)
 
             st.subheader("📊 Job Count by Company")
-            chart_data = df["Company"].value_counts().reset_index()
-            chart_data.columns = ["Company", "Job Count"]
-            fig = px.bar(chart_data, x="Company", y="Job Count", title="Top Hiring Companies")
-            st.plotly_chart(fig, use_container_width=True)
+            company_chart = df["Company"].value_counts().reset_index()
+            company_chart.columns = ["Company", "Job Count"]
+            fig_company = px.bar(company_chart, x="Company", y="Job Count", title="Top Hiring Companies")
+            st.plotly_chart(fig_company, use_container_width=True)
+
+            st.subheader("📈 Salary Insights")
+            company_salary = df.groupby("Company")["AvgSalary"].mean().dropna().sort_values(ascending=False).head(10).reset_index()
+            fig_salary = px.bar(company_salary, x="Company", y="AvgSalary", title="Avg Salary by Company", labels={"AvgSalary": "Avg Salary (USD)"})
+            st.plotly_chart(fig_salary, use_container_width=True)
 
             st.subheader("📋 Job Listings (Interactive Grid)")
             gb = GridOptionsBuilder.from_dataframe(df)
@@ -64,59 +83,8 @@ if st.button("🔍 Fetch Jobs"):
             AgGrid(df, gridOptions=grid_options, enable_enterprise_modules=True, fit_columns_on_grid_load=True)
 
             if st.button("📥 Export to Excel"):
-                df.to_excel("jobs_output.xlsx", index=False)
-                with open("jobs_output.xlsx", "rb") as f:
-                    st.download_button("Download Excel", f, file_name="jobs.xlsx")
-
-            st.markdown("---")
-            st.header("💰 Company & City Payscale Insights")
-            df['MinSalary'] = pd.to_numeric(df['salary_min'], errors='coerce')
-            df['MaxSalary'] = pd.to_numeric(df['salary_max'], errors='coerce')
-            df['AvgSalary'] = df[['MinSalary', 'MaxSalary']].mean(axis=1)
-
-            st.subheader("🏢 Average Salary by Company (Top 10)")
-            company_salary = df.groupby("Company")["AvgSalary"].mean().dropna().sort_values(ascending=False).head(10).reset_index()
-            fig = px.bar(company_salary, x="Company", y="AvgSalary", title="Avg Salary by Company", labels={"AvgSalary": "Avg Salary (USD)"})
-            st.plotly_chart(fig, use_container_width=True)
-
-            st.subheader("🌆 Average Salary by City (Top 10)")
-            city_salary = df.groupby("Location")["AvgSalary"].mean().dropna().sort_values(ascending=False).head(10).reset_index()
-            fig2 = px.bar(city_salary, x="Location", y="AvgSalary", title="Avg Salary by Location", labels={"AvgSalary": "Avg Salary (USD)"})
-            st.plotly_chart(fig2, use_container_width=True)
+                df.to_excel("combined_jobs.xlsx", index=False)
+                with open("combined_jobs.xlsx", "rb") as f:
+                    st.download_button("Download Excel", f, file_name="job_listings.xlsx")
         else:
-            st.warning("⚠️ No jobs found.")
-
-st.markdown("---")
-st.header("🏢 Company-Specific Job Scraper")
-company_name = st.text_input("Enter company name (e.g., Microsoft)", value="")
-company_pages = st.slider("Pages to fetch", 1, 5, 1, key="company_slider")
-
-if st.button("🏢 Fetch Jobs for Company"):
-    if company_name:
-        with st.spinner(f"Fetching jobs for {company_name}..."):
-            company_results = fetch_jobs(query=f'company:"{company_name}"', pages=company_pages)
-            if company_results:
-                df_company = pd.DataFrame(company_results)
-                st.success(f"✅ Found {len(df_company)} jobs at {company_name}")
-
-                st.subheader("📍 Jobs by Location")
-                loc_count = df_company["Location"].value_counts().reset_index()
-                loc_count.columns = ["Location", "Job Count"]
-                fig = px.bar(loc_count, x="Location", y="Job Count", title=f"Job Locations at {company_name}")
-                st.plotly_chart(fig, use_container_width=True)
-
-                st.subheader("📋 Company Job Listings (Interactive Grid)")
-                gb = GridOptionsBuilder.from_dataframe(df_company)
-                gb.configure_pagination(paginationAutoPageSize=True)
-                gb.configure_default_column(groupable=True, value=True, enableRowGroup=True, editable=False)
-                grid_options = gb.build()
-                AgGrid(df_company, gridOptions=grid_options, enable_enterprise_modules=True, fit_columns_on_grid_load=True)
-
-                if st.button("📥 Export Company Jobs to Excel"):
-                    df_company.to_excel("company_jobs.xlsx", index=False)
-                    with open("company_jobs.xlsx", "rb") as f:
-                        st.download_button("Download Excel", f, file_name=f"{company_name}_jobs.xlsx")
-            else:
-                st.warning(f"No jobs found for {company_name}.")
-    else:
-        st.warning("Please enter a company name.")
+            st.warning("⚠️ No jobs found. Try refining your search.")
