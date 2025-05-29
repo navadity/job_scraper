@@ -1,6 +1,8 @@
 streamlit
 pandas
 requests
-openpyxl
-streamlit-aggrid
+openai
+PyMuPDF
+reportlab
+st-aggrid
 plotly
