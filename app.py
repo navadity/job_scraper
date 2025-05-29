@@ -1,17 +1,15 @@
 import streamlit as st
 import requests
 import pandas as pd
-from st_aggrid import AgGrid, GridOptionsBuilder
 import plotly.express as px
 import openai
 from fpdf import FPDF
 import PyPDF2
-import io
 
 # Load OpenAI API key from Streamlit secrets
 openai.api_key = st.secrets["openai_api_key"]
 
-# Replace with your Adzuna credentials
+# Adzuna credentials
 APP_ID = "405c8afb"
 APP_KEY = "62a942e1b43aa0c0676795f62c5181d1"
 COUNTRY = "us"
@@ -61,7 +59,6 @@ And here is a job description they are targeting:
 
 Rewrite the resume to highlight relevant skills, experiences, and keywords from the job description while keeping it professional and concise.
 """
-
     response = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
@@ -82,7 +79,7 @@ def save_to_pdf(text, filename="rewritten_resume.pdf"):
     pdf.output(filename)
     return filename
 
-# UI starts here
+# Streamlit UI
 st.title("🧠 Smart Job Scraper + Resume Rewriter")
 
 job_query = st.text_input("🔍 Job Title to Search", value="Software Engineer 2")
@@ -94,22 +91,16 @@ if st.button("Fetch Jobs"):
         if jobs:
             df = pd.DataFrame(jobs)
             st.success(f"✅ Found {len(df)} jobs")
-
-            # Charts
+            
             st.subheader("📊 Top Hiring Companies")
             chart_data = df["Company"].value_counts().reset_index()
             chart_data.columns = ["Company", "Job Count"]
             fig = px.bar(chart_data, x="Company", y="Job Count", title="Top Companies Hiring")
             st.plotly_chart(fig, use_container_width=True)
 
-            # Interactive Grid
             st.subheader("📋 Job Listings")
-            gb = GridOptionsBuilder.from_dataframe(df)
-            gb.configure_pagination()
-            grid_options = gb.build()
-            selected = AgGrid(df, gridOptions=grid_options, enable_enterprise_modules=True)
+            st.dataframe(df)
 
-            # Resume Rewriter Section
             st.subheader("📝 Resume Rewriting Assistant")
             uploaded_file = st.file_uploader("Upload your Resume (PDF)", type=["pdf"])
             if uploaded_file:
