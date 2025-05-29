@@ -1,22 +1,21 @@
 import streamlit as st
 import requests
 import pandas as pd
-import fitz  # PyMuPDF
-from reportlab.pdfgen import canvas
-from io import BytesIO
-import openai
 from st_aggrid import AgGrid, GridOptionsBuilder
 import plotly.express as px
+import openai
+from fpdf import FPDF
+import PyPDF2
+import io
 
-# Set API key
-openai.api_key = st.secrets["openai"]["api_key"]
+# Load OpenAI API key from Streamlit secrets
+openai.api_key = st.secrets["openai_api_key"]
 
-# Adzuna credentials
+# Replace with your Adzuna credentials
 APP_ID = "405c8afb"
 APP_KEY = "62a942e1b43aa0c0676795f62c5181d1"
 COUNTRY = "us"
 
-# Job scraping function
 def fetch_jobs(query, pages=1):
     all_jobs = []
     for page in range(1, pages + 1):
@@ -43,94 +42,86 @@ def fetch_jobs(query, pages=1):
             st.error(f"Error {res.status_code}: {res.text}")
     return all_jobs
 
-# Resume reading
 def extract_text_from_pdf(uploaded_file):
-    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+    reader = PyPDF2.PdfReader(uploaded_file)
     text = ""
-    for page in doc:
-        text += page.get_text()
+    for page in reader.pages:
+        text += page.extract_text()
     return text
 
-# Resume rewriting with OpenAI
-def rewrite_resume(original_resume, job_description):
-    prompt = f"""You are a professional resume writer. Modify the following resume to better match the job description provided below. Keep the tone formal and highlight relevant experience.
+def rewrite_resume(resume_text, job_description):
+    prompt = f"""
+You are a resume optimization assistant. Here is a user's current resume:
 
-Job Description:
+{resume_text}
+
+And here is a job description they are targeting:
+
 {job_description}
 
-Original Resume:
-{original_resume}
-
-Modified Resume:"""
+Rewrite the resume to highlight relevant skills, experiences, and keywords from the job description while keeping it professional and concise.
+"""
 
     response = openai.ChatCompletion.create(
         model="gpt-4",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
+        messages=[
+            {"role": "system", "content": "You are an expert resume editor."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.7
     )
-    return response.choices[0].message["content"]
+    return response.choices[0].message.content.strip()
 
-# Convert modified resume to PDF
-def create_pdf_from_text(text):
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer)
-    lines = text.split("\n")
-    y = 800
-    for line in lines:
-        if y < 50:
-            c.showPage()
-            y = 800
-        c.drawString(50, y, line[:100])
-        y -= 15
-    c.save()
-    buffer.seek(0)
-    return buffer
+def save_to_pdf(text, filename="rewritten_resume.pdf"):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_font("Arial", size=12)
+    for line in text.split('\n'):
+        pdf.multi_cell(0, 10, line)
+    pdf.output(filename)
+    return filename
 
-# UI
-st.title("🧠 Smart Job Scraper + Resume Tailor")
+# UI starts here
+st.title("🧠 Smart Job Scraper + Resume Rewriter")
 
-job_query = st.text_input("Search Job Title:", value="Software Engineer 2")
-num_pages = st.slider("Pages to scrape", 1, 3, 1)
+job_query = st.text_input("🔍 Job Title to Search", value="Software Engineer 2")
+num_pages = st.slider("Pages to scrape", 1, 5, 1)
 
-if st.button("🔍 Fetch Jobs"):
-    results = fetch_jobs(job_query, pages=num_pages)
-    if results:
-        df = pd.DataFrame(results)
-        st.success(f"✅ Found {len(df)} jobs.")
+if st.button("Fetch Jobs"):
+    with st.spinner("Fetching jobs..."):
+        jobs = fetch_jobs(job_query, pages=num_pages)
+        if jobs:
+            df = pd.DataFrame(jobs)
+            st.success(f"✅ Found {len(df)} jobs")
 
-        # Job chart
-        st.subheader("📊 Top Companies Hiring")
-        chart = df["Company"].value_counts().reset_index()
-        chart.columns = ["Company", "Job Count"]
-        fig = px.bar(chart, x="Company", y="Job Count")
-        st.plotly_chart(fig)
+            # Charts
+            st.subheader("📊 Top Hiring Companies")
+            chart_data = df["Company"].value_counts().reset_index()
+            chart_data.columns = ["Company", "Job Count"]
+            fig = px.bar(chart_data, x="Company", y="Job Count", title="Top Companies Hiring")
+            st.plotly_chart(fig, use_container_width=True)
 
-        # Data table
-        st.subheader("📋 Job Listings")
-        gb = GridOptionsBuilder.from_dataframe(df)
-        gb.configure_pagination()
-        grid_options = gb.build()
-        AgGrid(df, gridOptions=grid_options)
+            # Interactive Grid
+            st.subheader("📋 Job Listings")
+            gb = GridOptionsBuilder.from_dataframe(df)
+            gb.configure_pagination()
+            grid_options = gb.build()
+            selected = AgGrid(df, gridOptions=grid_options, enable_enterprise_modules=True)
 
-        # Download
-        if st.button("📥 Export to Excel"):
-            df.to_excel("jobs_output.xlsx", index=False)
-            with open("jobs_output.xlsx", "rb") as f:
-                st.download_button("Download Excel", f, file_name="jobs.xlsx")
-    else:
-        st.warning("⚠️ No jobs found.")
+            # Resume Rewriter Section
+            st.subheader("📝 Resume Rewriting Assistant")
+            uploaded_file = st.file_uploader("Upload your Resume (PDF)", type=["pdf"])
+            if uploaded_file:
+                resume_text = extract_text_from_pdf(uploaded_file)
+                job_to_use = st.selectbox("Select Job for Tailoring Resume", df["Title"] + " @ " + df["Company"])
+                selected_job_desc = df[df["Title"] + " @ " + df["Company"] == job_to_use]["Description"].values[0]
 
-# Resume tailoring
-st.header("✍️ Upload Resume to Tailor")
-
-uploaded_resume = st.file_uploader("Upload your resume (PDF)", type=["pdf"])
-job_description = st.text_area("Paste job description here")
-
-if uploaded_resume and job_description:
-    if st.button("🚀 Rewrite Resume"):
-        resume_text = extract_text_from_pdf(uploaded_resume)
-        tailored_resume = rewrite_resume(resume_text, job_description)
-        pdf_file = create_pdf_from_text(tailored_resume)
-        st.success("✅ Resume rewritten successfully!")
-        st.download_button("📄 Download Tailored Resume (PDF)", pdf_file, file_name="tailored_resume.pdf")
-
+                if st.button("✏️ Rewrite Resume"):
+                    with st.spinner("Rewriting your resume..."):
+                        rewritten_text = rewrite_resume(resume_text, selected_job_desc)
+                        pdf_path = save_to_pdf(rewritten_text)
+                        with open(pdf_path, "rb") as f:
+                            st.download_button("📥 Download Tailored Resume (PDF)", f, file_name="rewritten_resume.pdf")
+        else:
+            st.warning("⚠️ No jobs found.")
