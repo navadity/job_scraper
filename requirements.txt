@@ -4,5 +4,6 @@ requests
 openai
 PyMuPDF
 reportlab
-st-aggrid
+fpdf
+PyPDF2
 plotly
